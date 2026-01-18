@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  suez:
+    build: .
+    container_name: suez-to-mqtt
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - SUEZ_EMAIL=${SUEZ_EMAIL}
+      - SUEZ_PASSWORD=${SUEZ_PASSWORD}
+      - SUEZ_ID_PDS=${SUEZ_ID_PDS}
+      - VERIFY_SSL=${VERIFY_SSL:-true}
+      - MQTT_BROKER=${MQTT_BROKER:-localhost}
+      - MQTT_PORT=${MQTT_PORT:-1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      - MQTT_TOPIC=${MQTT_TOPIC:-water}
+      - HEARTBEAT_INTERVAL=${HEARTBEAT_INTERVAL:-60}

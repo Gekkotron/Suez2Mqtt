@@ -1,0 +1,16 @@
+# Cloudflare bypass dependencies
+# Install with: pip install -r requirements-cloudflare.txt
+
+# Option 1: undetected-chromedriver (Recommended for cookie extraction)
+undetected-chromedriver>=3.5.0
+
+# Option 2: Playwright with stealth (Alternative for cookie extraction)
+playwright>=1.40.0
+playwright-stealth>=1.0.0
+
+# Option 3: cloudscraper (For direct API calls with Cloudflare bypass)
+cloudscraper>=1.2.71
+
+# Supporting libraries
+selenium>=4.15.0
+beautifulsoup4>=4.12.0
