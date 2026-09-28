@@ -59,12 +59,14 @@ class SuezMQTTService:
 
             # Try to parse as JSON first
             mode = 'daily'
-            days = 30
+            custom_days: Optional[int] = None
 
             try:
                 import json
                 payload_json = json.loads(payload_raw)
                 mode = payload_json.get('mode', 'daily').lower()
+                if 'days' in payload_json:
+                    custom_days = int(payload_json['days'])
             except (json.JSONDecodeError, AttributeError):
                 # Fall back to plain text parsing
                 payload = payload_raw.lower()
@@ -78,7 +80,7 @@ class SuezMQTTService:
                     logger.warning(f"Unknown payload '{payload}', using daily mode")
                     mode = 'daily'
 
-            # Set days based on mode
+            # Set days based on mode (overridable via JSON 'days')
             if mode == 'monthly':
                 days = 90
             elif mode == 'history':
@@ -86,6 +88,9 @@ class SuezMQTTService:
             else:
                 mode = 'daily'  # Normalize mode
                 days = 30
+
+            if custom_days is not None and custom_days > 0:
+                days = custom_days
 
             logger.info(f"Processing request: mode={mode}, days={days}")
 

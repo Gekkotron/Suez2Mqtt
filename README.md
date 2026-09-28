@@ -44,6 +44,8 @@ SUEZ_ID_PDS=your-meter-id
 VERIFY_SSL=false
 MQTT_BROKER=localhost
 MQTT_PORT=1883
+MQTT_USERNAME=your-mqtt-user       # omit for anonymous broker
+MQTT_PASSWORD=your-mqtt-password   # omit for anonymous broker
 MQTT_TOPIC=water
 HEARTBEAT_INTERVAL=60
 ```
@@ -76,8 +78,15 @@ mosquitto_pub -t 'water/refresh' -m '{"mode": "daily"}'
 mosquitto_pub -t 'water/refresh' -m '{"mode": "monthly"}'
 
 # Historical data (last 720 days)
-mosquitto_pub -t 'water/refresh' -m '{"mode": "monthly"}'
+mosquitto_pub -t 'water/refresh' -m '{"mode": "history"}'
+
+# One year of daily history (custom range)
+mosquitto_pub -t 'water/refresh' -m '{"mode": "history", "days": 365}'
 ```
+
+The JSON payload accepts an optional `days` field that overrides the mode
+default (daily=30, monthly=90, history=720). Use it to request any custom
+window, e.g. `{"mode": "history", "days": 365}` for the last year.
 
 **Plain text payload (backwards compatible):**
 ```bash
