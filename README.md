@@ -57,7 +57,7 @@ HEARTBEAT_INTERVAL=60
 | `water/refresh` | Trigger fetch | `daily`, `monthly`, or `history` |
 | `water/data` | Consumption data | JSON |
 | `water/status` | Status messages | JSON |
-| `water/error` | Error messages | JSON |
+| `water/error` | Error messages (retained; cleared on next successful publish) | JSON |
 | `water/heartbeat` | Service alive indicator | JSON with timestamp |
 
 ## Usage
@@ -160,15 +160,16 @@ return msg;
 ## Project Structure
 
 ```
-SuezToMqtt/
+Suez2Mqtt/
 ├── src/suez_mqtt/
 │   ├── client.py          # Async client using toutsurmoneau
 │   ├── service.py         # Async MQTT service
 │   ├── publisher.py       # MQTT publisher
 │   └── __main__.py        # Entry point
-├── tools/
-│   └── test_client.py     # Test script
 ├── run.py                 # Launcher
+├── update.sh              # git pull --rebase + docker compose rebuild
+├── docker-compose.yml     # Docker Compose service definition
+├── Dockerfile             # Container image
 ├── requirements.txt       # Dependencies
 └── .env                   # Configuration
 ```
@@ -197,7 +198,11 @@ services:
 ```
 
 ```bash
-docker-compose up -d
+# First run
+docker compose up -d          # or: docker-compose up -d
+
+# Update to latest master and rebuild
+./update.sh
 ```
 
 ## Troubleshooting
