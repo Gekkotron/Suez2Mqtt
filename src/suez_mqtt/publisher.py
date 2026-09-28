@@ -105,6 +105,19 @@ class MQTTPublisher:
             logger.error(f"Error publishing to MQTT: {e}")
             return False
     
+    def clear_retained(self, topic: str) -> bool:
+        """Clear a retained message by publishing an empty retained payload."""
+        try:
+            result = self.client.publish(topic, payload=None, qos=1, retain=True)
+            if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                logger.info(f"Cleared retained message on '{topic}'")
+                return True
+            logger.error(f"Failed to clear '{topic}', return code: {result.rc}")
+            return False
+        except Exception as e:
+            logger.error(f"Error clearing retained '{topic}': {e}")
+            return False
+
     def subscribe(self, topic: str, callback=None):
         """Subscribe to MQTT topic"""
         if callback:

@@ -162,6 +162,9 @@ class SuezMQTTService:
                         'records': len(data.get('data', {}).get('content', {}).get('measures', []))
                     }
                     self.mqtt_publisher.publish(status_data, f"{self.mqtt_publisher.topic}/status")
+
+                    # Clear any stale retained error now that we have fresh data
+                    self.mqtt_publisher.clear_retained(f"{self.mqtt_publisher.topic}/error")
                     return True
                 else:
                     logger.error("Failed to publish data to MQTT")
