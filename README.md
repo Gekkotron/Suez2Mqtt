@@ -23,6 +23,9 @@ python run.py
 mosquitto_pub -t 'water/refresh' -m '{"mode": "daily"}'
 ```
 
+Home Assistant and the [Oikos app](https://github.com/Gekkotron/Oikos) pick up
+the water sensors automatically — see [Home Assistant discovery](#home-assistant-discovery).
+
 ## Features
 
 ✅ **Fully automated** - No cookies, no browser, no CAPTCHA
@@ -168,13 +171,46 @@ The timestamp is in milliseconds since Unix epoch (January 1, 1970).
 
 ### Home Assistant
 
+With `HA_DISCOVERY_ENABLED=true` (the default), the sensors appear
+automatically under a `Suez Water` device — no YAML needed. You only need to
+add a button to trigger the refresh:
+
 ```yaml
 mqtt:
   button:
     - name: "Refresh Water Data"
       command_topic: "water/refresh"
-      payload_press: "daily"
+      payload_press: '{"mode": "daily"}'
+```
 
+<details>
+<summary>Manual configuration (when discovery is disabled)</summary>
+
+If you set `HA_DISCOVERY_ENABLED=false`, you can still declare the sensors
+yourself from the published scalar topics (`water/sensor/*`):
+
+```yaml
+mqtt:
+  sensor:
+    - name: "Suez daily volume"
+      state_topic: "water/sensor/daily_volume"
+      unit_of_measurement: "L"
+      device_class: "water"
+      state_class: "measurement"
+    - name: "Suez meter reading"
+      state_topic: "water/sensor/total_volume"
+      unit_of_measurement: "m³"
+      device_class: "water"
+      state_class: "total_increasing"
+    - name: "Suez last reading"
+      state_topic: "water/sensor/last_update"
+      device_class: "timestamp"
+```
+
+Or parse the raw JSON on `water/data` directly:
+
+```yaml
+mqtt:
   sensor:
     - name: "Daily Water Usage"
       state_topic: "water/data"
@@ -182,6 +218,8 @@ mqtt:
       unit_of_measurement: "L"
       device_class: "water"
 ```
+
+</details>
 
 ### Node-RED
 
@@ -235,6 +273,10 @@ services:
       - SUEZ_PASSWORD=your-password
       - SUEZ_ID_PDS=your-meter-id
       - MQTT_BROKER=mosquitto
+      # Home Assistant discovery (optional, defaults shown)
+      - HA_DISCOVERY_ENABLED=true
+      - HA_DISCOVERY_PREFIX=homeassistant
+      - HA_DEVICE_NAME=Suez Water
     restart: unless-stopped
 ```
 
@@ -266,6 +308,22 @@ cat .env | grep MQTT
 ### SSL Errors
 Set `VERIFY_SSL=false` in `.env`
 
+### Home Assistant / Oikos sensors don't show up
+
+1. Confirm `HA_DISCOVERY_ENABLED=true` (the default) and that the service
+   connected to the broker — the startup log prints
+   `Publishing Home Assistant discovery under '<prefix>/'`.
+2. In Home Assistant, make sure the MQTT integration's discovery prefix
+   matches `HA_DISCOVERY_PREFIX` (default `homeassistant`).
+3. Check the retained config topic exists on the broker:
+   ```bash
+   mosquitto_sub -t 'homeassistant/sensor/suez_water_<id_pds>/+/config' -v
+   ```
+4. The sensors show the last published value — trigger a refresh at least
+   once with `mosquitto_pub -t 'water/refresh' -m '{"mode": "daily"}'`.
+5. In Oikos specifically, open *Customize* on the sensor and set its energy
+   role to `water` so it joins the Energy screen's water tile.
+
 ## How It Works
 
 This service uses the [toutsurmoneau](https://github.com/laurent-martin/py-mon-eau) library by Laurent Martin, which provides automated access to the Suez API without requiring:
@@ -274,6 +332,14 @@ This service uses the [toutsurmoneau](https://github.com/laurent-martin/py-mon-e
 - CAPTCHA solving
 
 The library handles all authentication automatically using your email and password.
+
+On startup — when `HA_DISCOVERY_ENABLED=true` — the service publishes retained
+Home Assistant MQTT Discovery configs under `<HA_DISCOVERY_PREFIX>/sensor/suez_water_<id_pds>/…/config`.
+Each refresh triggered by `water/refresh` then extracts the latest measure
+from the Suez response and publishes scalar state values on
+`<MQTT_TOPIC>/sensor/<name>`. Both Home Assistant and the
+[Oikos](https://github.com/Gekkotron/Oikos) app subscribe to the same
+discovery tree, so the sensors appear in both without extra configuration.
 
 ## License
 
