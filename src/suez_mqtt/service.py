@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from .client import SuezClient
+from .discovery import HomeAssistantDiscovery
 from .publisher import MQTTPublisher
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,8 @@ class SuezMQTTService:
 
     def __init__(self, email: str, password: str, id_pds: str,
                  mqtt_publisher: MQTTPublisher, verify_ssl: bool = True,
-                 heartbeat_interval: int = 60):
+                 heartbeat_interval: int = 60,
+                 ha_discovery: Optional[HomeAssistantDiscovery] = None):
         """
         Initialize service
 
@@ -30,6 +32,7 @@ class SuezMQTTService:
             mqtt_publisher: MQTT publisher
             verify_ssl: Enable SSL verification
             heartbeat_interval: Heartbeat interval in seconds (default: 60)
+            ha_discovery: Optional Home Assistant discovery helper
         """
         self.email = email
         self.password = password
@@ -39,6 +42,7 @@ class SuezMQTTService:
         self.running = False
         self.trigger_topic = f"{mqtt_publisher.topic}/refresh"
         self.heartbeat_interval = heartbeat_interval
+        self.ha_discovery = ha_discovery
         self.suez_client = None
 
         # Register signal handlers
@@ -165,6 +169,20 @@ class SuezMQTTService:
 
                     # Clear any stale retained error now that we have fresh data
                     self.mqtt_publisher.clear_retained(f"{self.mqtt_publisher.topic}/error")
+
+                    # Update Home Assistant discovery state topics
+                    if self.ha_discovery is not None:
+                        try:
+                            self.ha_discovery.publish_states_from_data(data)
+                            try:
+                                meter_reading = await client.get_latest_reading()
+                            except Exception as reading_err:
+                                logger.debug(f"Could not fetch latest meter reading: {reading_err}")
+                                meter_reading = None
+                            self.ha_discovery.publish_meter_reading(meter_reading)
+                        except Exception as ha_err:
+                            logger.warning(f"Failed to update HA discovery states: {ha_err}")
+
                     return True
                 else:
                     logger.error("Failed to publish data to MQTT")
@@ -245,6 +263,13 @@ class SuezMQTTService:
         # Wait for connection
         import time
         time.sleep(2)
+
+        # Publish Home Assistant discovery (retained) once the broker is up
+        if self.ha_discovery is not None:
+            try:
+                self.ha_discovery.publish_discovery()
+            except Exception as e:
+                logger.warning(f"Failed to publish Home Assistant discovery: {e}")
 
         # Subscribe to trigger topic
         self.mqtt_publisher.subscribe(self.trigger_topic, self._on_trigger_message)

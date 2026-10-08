@@ -5,6 +5,7 @@ import os
 import sys
 from dotenv import load_dotenv
 
+from .discovery import HomeAssistantDiscovery
 from .publisher import MQTTPublisher
 from .service import SuezMQTTService
 
@@ -34,6 +35,11 @@ def main():
     mqtt_topic = os.getenv('MQTT_TOPIC', 'water')
     heartbeat_interval = int(os.getenv('HEARTBEAT_INTERVAL', '60'))
 
+    # Home Assistant MQTT Discovery
+    ha_discovery_enabled = os.getenv('HA_DISCOVERY_ENABLED', 'true').lower() in ('true', '1', 'yes')
+    ha_discovery_prefix = os.getenv('HA_DISCOVERY_PREFIX', 'homeassistant')
+    ha_device_name = os.getenv('HA_DEVICE_NAME', 'Suez Water')
+
     # Validate configuration
     if not email:
         logger.error("SUEZ_EMAIL not configured in environment")
@@ -58,6 +64,9 @@ def main():
     logger.info(f"  MQTT Broker: {mqtt_broker}:{mqtt_port}")
     logger.info(f"  MQTT Topic: {mqtt_topic}")
     logger.info(f"  Heartbeat Interval: {heartbeat_interval}s")
+    logger.info(f"  HA Discovery: {'enabled' if ha_discovery_enabled else 'disabled'}"
+                + (f" (prefix='{ha_discovery_prefix}', device='{ha_device_name}')"
+                   if ha_discovery_enabled else ""))
     logger.info("="*60)
 
     # Create MQTT publisher
@@ -69,6 +78,17 @@ def main():
         topic=mqtt_topic
     )
 
+    # Create Home Assistant discovery helper, if enabled
+    ha_discovery = None
+    if ha_discovery_enabled:
+        ha_discovery = HomeAssistantDiscovery(
+            publisher=mqtt_publisher,
+            id_pds=id_pds,
+            prefix=ha_discovery_prefix,
+            device_name=ha_device_name,
+            base_state_topic=mqtt_topic,
+        )
+
     # Create and start service (fully automated)
     service = SuezMQTTService(
         email=email,
@@ -76,7 +96,8 @@ def main():
         id_pds=id_pds,
         mqtt_publisher=mqtt_publisher,
         verify_ssl=verify_ssl,
-        heartbeat_interval=heartbeat_interval
+        heartbeat_interval=heartbeat_interval,
+        ha_discovery=ha_discovery,
     )
 
     service.start()

@@ -29,6 +29,7 @@ mosquitto_pub -t 'water/refresh' -m '{"mode": "daily"}'
 ✅ **Async architecture** - Modern Python with asyncio
 ✅ **MQTT integration** - Trigger-based data fetching
 ✅ **Daily & monthly data** - Flexible consumption tracking
+✅ **Home Assistant discovery** - Sensors appear automatically in HA and the [Oikos app](https://github.com/Gekkotron/Oikos) (toggle with `HA_DISCOVERY_ENABLED`)
 
 ## Configuration
 
@@ -48,7 +49,18 @@ MQTT_USERNAME=your-mqtt-user       # omit for anonymous broker
 MQTT_PASSWORD=your-mqtt-password   # omit for anonymous broker
 MQTT_TOPIC=water
 HEARTBEAT_INTERVAL=60
+
+# Home Assistant MQTT Discovery (optional, defaults shown)
+HA_DISCOVERY_ENABLED=true
+HA_DISCOVERY_PREFIX=homeassistant
+HA_DEVICE_NAME=Suez Water
 ```
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `HA_DISCOVERY_ENABLED` | `true` | Publish retained Home Assistant MQTT discovery messages. Set to `false` to turn the integration off. |
+| `HA_DISCOVERY_PREFIX` | `homeassistant` | Base topic HA (and the Oikos app) listens on for discovery. |
+| `HA_DEVICE_NAME` | `Suez Water` | Device name shown in HA / Oikos. |
 
 ## MQTT Topics
 
@@ -59,6 +71,34 @@ HEARTBEAT_INTERVAL=60
 | `water/status` | Status messages | JSON |
 | `water/error` | Error messages (retained; cleared on next successful publish) | JSON |
 | `water/heartbeat` | Service alive indicator | JSON with timestamp |
+| `water/sensor/daily_volume` | Latest daily volume (L) | Scalar (used by HA discovery) |
+| `water/sensor/total_volume` | Latest meter reading (m³) | Scalar (used by HA discovery) |
+| `water/sensor/last_update` | Timestamp of the latest reading | ISO 8601 (used by HA discovery) |
+
+### Home Assistant discovery
+
+When `HA_DISCOVERY_ENABLED=true` (default), the service publishes retained
+Home Assistant MQTT Discovery configs on startup:
+
+| Topic | Sensor |
+|-------|--------|
+| `<HA_DISCOVERY_PREFIX>/sensor/suez_water_<id_pds>/daily_volume/config` | Daily water consumption (L, `device_class: water`, `state_class: measurement`) |
+| `<HA_DISCOVERY_PREFIX>/sensor/suez_water_<id_pds>/total_volume/config` | Water meter reading (m³, `device_class: water`, `state_class: total_increasing`) |
+| `<HA_DISCOVERY_PREFIX>/sensor/suez_water_<id_pds>/last_update/config` | Last reading timestamp (`device_class: timestamp`) |
+
+State values are refreshed after every successful fetch triggered by
+`water/refresh`.
+
+To disable the integration completely (no discovery messages, no scalar state
+topics), set `HA_DISCOVERY_ENABLED=false`.
+
+### Oikos app
+
+The [Oikos](https://github.com/Gekkotron/Oikos) app subscribes to the same
+`homeassistant/#` discovery topics as Home Assistant: once discovery is
+published, the Suez sensors show up automatically. To promote the daily volume
+sensor to the Energy screen's water tile, open the Oikos *Customize* sheet and
+set its role to `water`.
 
 ## Usage
 
@@ -165,6 +205,7 @@ Suez2Mqtt/
 │   ├── client.py          # Async client using toutsurmoneau
 │   ├── service.py         # Async MQTT service
 │   ├── publisher.py       # MQTT publisher
+│   ├── discovery.py       # Home Assistant MQTT discovery
 │   └── __main__.py        # Entry point
 ├── run.py                 # Launcher
 ├── update.sh              # git pull --rebase + docker compose rebuild

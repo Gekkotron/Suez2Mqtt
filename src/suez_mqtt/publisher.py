@@ -80,29 +80,47 @@ class MQTTPublisher:
     def publish(self, data: Dict[str, Any], topic: Optional[str] = None) -> bool:
         """
         Publish data to MQTT
-        
+
         Args:
             data: Data to publish
             topic: Override default topic
-            
+
         Returns:
             True if published successfully
         """
         try:
             publish_topic = topic or f"{self.topic}/data"
             payload = json.dumps(data, ensure_ascii=False, indent=2)
-            
+
             result = self.client.publish(publish_topic, payload, qos=1, retain=True)
-            
+
             if result.rc == mqtt.MQTT_ERR_SUCCESS:
                 logger.info(f"Published data to '{publish_topic}'")
                 return True
             else:
                 logger.error(f"Failed to publish, return code: {result.rc}")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error publishing to MQTT: {e}")
+            return False
+
+    def publish_raw(self, topic: str, payload: str, qos: int = 1, retain: bool = True) -> bool:
+        """
+        Publish an arbitrary string payload to any topic.
+
+        Used by the Home Assistant discovery helper, which owns its own topic
+        tree outside of ``{self.topic}/…``.
+        """
+        try:
+            result = self.client.publish(topic, payload, qos=qos, retain=retain)
+            if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                logger.debug(f"Published to '{topic}'")
+                return True
+            logger.error(f"Failed to publish to '{topic}', return code: {result.rc}")
+            return False
+        except Exception as e:
+            logger.error(f"Error publishing to '{topic}': {e}")
             return False
     
     def clear_retained(self, topic: str) -> bool:
