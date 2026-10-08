@@ -118,8 +118,16 @@ class HomeAssistantDiscovery:
             if isinstance(data, dict)
             else []
         )
+        # Suez lists the current day as a placeholder (index null, volume 0) until
+        # the reading lands the next morning, so take the last day with a real index.
         latest = next(
-            (m for m in reversed(measures) if isinstance(m, dict) and m.get("volume") is not None),
+            (
+                m
+                for m in reversed(measures)
+                if isinstance(m, dict)
+                and m.get("volume") is not None
+                and m.get("index") is not None
+            ),
             None,
         )
         if latest is None:
@@ -133,7 +141,12 @@ class HomeAssistantDiscovery:
 
         date_str = latest.get("date")
         if isinstance(date_str, str) and date_str:
-            iso = date_str if "T" in date_str else f"{date_str}T00:00:00+00:00"
+            # Suez sends "YYYY-MM-DD HH:MM:SS" (or a bare date); HA timestamps need ISO 8601.
+            iso = date_str.strip().replace(" ", "T", 1)
+            if "T" not in iso:
+                iso = f"{iso}T00:00:00"
+            if not re.search(r"(Z|[+-]\d{2}:?\d{2})$", iso):
+                iso = f"{iso}+00:00"
             self.publisher.publish_raw(self.state_topic("last_update"), iso, retain=True)
 
         # Some integrations expose a cumulative meter index in the measure itself.
