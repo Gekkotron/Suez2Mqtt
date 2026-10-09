@@ -180,6 +180,7 @@ class SuezMQTTService:
                                 logger.debug(f"Could not fetch latest meter reading: {reading_err}")
                                 meter_reading = None
                             self.ha_discovery.publish_meter_reading(meter_reading)
+                            self.ha_discovery.flush_states()
                         except Exception as ha_err:
                             logger.warning(f"Failed to update HA discovery states: {ha_err}")
 

@@ -39,6 +39,7 @@ def main():
     ha_discovery_enabled = os.getenv('HA_DISCOVERY_ENABLED', 'true').lower() in ('true', '1', 'yes')
     ha_discovery_prefix = os.getenv('HA_DISCOVERY_PREFIX', 'homeassistant')
     ha_device_name = os.getenv('HA_DEVICE_NAME', 'Suez Water')
+    ha_state_topic = os.getenv('HA_STATE_TOPIC', '').strip()
 
     # Validate configuration
     if not email:
@@ -65,7 +66,8 @@ def main():
     logger.info(f"  MQTT Topic: {mqtt_topic}")
     logger.info(f"  Heartbeat Interval: {heartbeat_interval}s")
     logger.info(f"  HA Discovery: {'enabled' if ha_discovery_enabled else 'disabled'}"
-                + (f" (prefix='{ha_discovery_prefix}', device='{ha_device_name}')"
+                + (f" (prefix='{ha_discovery_prefix}', device='{ha_device_name}'"
+                   + (f", state='{ha_state_topic}'" if ha_state_topic else "") + ")"
                    if ha_discovery_enabled else ""))
     logger.info("="*60)
 
@@ -87,6 +89,7 @@ def main():
             prefix=ha_discovery_prefix,
             device_name=ha_device_name,
             base_state_topic=mqtt_topic,
+            json_state_topic=ha_state_topic or None,
         )
 
     # Create and start service (fully automated)

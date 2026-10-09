@@ -57,6 +57,7 @@ HEARTBEAT_INTERVAL=60
 HA_DISCOVERY_ENABLED=true
 HA_DISCOVERY_PREFIX=homeassistant
 HA_DEVICE_NAME=Suez Water
+HA_STATE_TOPIC=
 ```
 
 | Variable | Default | Purpose |
@@ -64,6 +65,7 @@ HA_DEVICE_NAME=Suez Water
 | `HA_DISCOVERY_ENABLED` | `true` | Publish retained Home Assistant MQTT discovery messages. Set to `false` to turn the integration off. |
 | `HA_DISCOVERY_PREFIX` | `homeassistant` | Base topic HA (and the Oikos app) listens on for discovery. |
 | `HA_DEVICE_NAME` | `Suez Water` | Device name shown in HA / Oikos. |
+| `HA_STATE_TOPIC` | *(empty)* | When set, state is one retained JSON object `{"consumption_l", "index_m3", "timestamp"}` on this topic, read through `value_json` templates. Empty = scalar `<MQTT_TOPIC>/sensor/<name>` topics. |
 
 ## MQTT Topics
 
@@ -91,6 +93,16 @@ Home Assistant MQTT Discovery configs on startup:
 
 State values are refreshed after every successful fetch triggered by
 `water/refresh`.
+
+By default each sensor has its own scalar topic `<MQTT_TOPIC>/sensor/<name>`.
+History recorders that only store JSON objects (such as Athena-Core, which feeds
+the Oikos charts) skip scalar payloads. To fix that, set `HA_STATE_TOPIC` to a
+recorded topic, for example `jeedom/data/water`. The service then publishes one
+retained message there, and the discovery configs read it with `value_json` templates:
+
+```json
+{"consumption_l": 312.0, "index_m3": 1234.567, "timestamp": "2026-10-08T00:00:00+00:00"}
+```
 
 To disable the integration completely (no discovery messages, no scalar state
 topics), set `HA_DISCOVERY_ENABLED=false`.

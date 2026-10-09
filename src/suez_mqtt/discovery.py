@@ -1,9 +1,14 @@
 """Home Assistant MQTT Discovery for Suez water consumption sensors.
 
 Publishes retained discovery configs under
-``<prefix>/sensor/<device_id>/<sensor>/config`` and the matching scalar state
-values on ``<MQTT_TOPIC>/sensor/<sensor>``, so any MQTT Discovery client
-(Home Assistant, the Oikos app) can pick up the sensors automatically.
+``<prefix>/sensor/<device_id>/<sensor>/config`` and the matching state values,
+so any MQTT Discovery client (Home Assistant, the Oikos app) can pick up the
+sensors automatically.
+
+State goes either to scalar topics ``<MQTT_TOPIC>/sensor/<sensor>`` (default)
+or, when ``json_state_topic`` is set, to a single retained JSON object
+``{"consumption_l", "index_m3", "timestamp"}`` read through ``value_json``
+templates. The JSON form is what history recorders such as Athena-Core store.
 """
 
 import json
@@ -26,6 +31,8 @@ class HomeAssistantDiscovery:
     """Builds and publishes HA MQTT discovery messages for Suez sensors."""
 
     SENSORS = ("daily_volume", "total_volume", "last_update")
+    # Key of each sensor in the JSON state object.
+    JSON_KEYS = {"daily_volume": "consumption_l", "total_volume": "index_m3", "last_update": "timestamp"}
 
     def __init__(
         self,
@@ -34,15 +41,26 @@ class HomeAssistantDiscovery:
         prefix: str = "homeassistant",
         device_name: str = "Suez Water",
         base_state_topic: Optional[str] = None,
+        json_state_topic: Optional[str] = None,
     ):
         self.publisher = publisher
         self.prefix = prefix.rstrip("/") or "homeassistant"
         self.device_name = device_name or "Suez Water"
         self.device_id = f"suez_water_{_sanitize(id_pds)}"
         self.base_state_topic = (base_state_topic or publisher.topic).rstrip("/")
+        self.json_state_topic = (json_state_topic or "").strip().rstrip("/") or None
+        self._state: Dict[str, Any] = {}
 
     def state_topic(self, sensor: str) -> str:
+        if self.json_state_topic:
+            return self.json_state_topic
         return f"{self.base_state_topic}/sensor/{sensor}"
+
+    def _state_fields(self, sensor: str) -> Dict[str, Any]:
+        fields: Dict[str, Any] = {"state_topic": self.state_topic(sensor)}
+        if self.json_state_topic:
+            fields["value_template"] = f"{{{{ value_json.{self.JSON_KEYS[sensor]} }}}}"
+        return fields
 
     def _config_topic(self, sensor: str) -> str:
         return f"{self.prefix}/sensor/{self.device_id}/{sensor}/config"
@@ -62,7 +80,7 @@ class HomeAssistantDiscovery:
                 "name": "Daily water consumption",
                 "unique_id": f"{self.device_id}_daily_volume",
                 "object_id": f"{self.device_id}_daily_volume",
-                "state_topic": self.state_topic("daily_volume"),
+                **self._state_fields("daily_volume"),
                 "unit_of_measurement": "L",
                 "device_class": "water",
                 "state_class": "measurement",
@@ -73,7 +91,7 @@ class HomeAssistantDiscovery:
                 "name": "Water meter reading",
                 "unique_id": f"{self.device_id}_total_volume",
                 "object_id": f"{self.device_id}_total_volume",
-                "state_topic": self.state_topic("total_volume"),
+                **self._state_fields("total_volume"),
                 "unit_of_measurement": "m³",
                 "device_class": "water",
                 "state_class": "total_increasing",
@@ -84,7 +102,7 @@ class HomeAssistantDiscovery:
                 "name": "Last water reading",
                 "unique_id": f"{self.device_id}_last_update",
                 "object_id": f"{self.device_id}_last_update",
-                "state_topic": self.state_topic("last_update"),
+                **self._state_fields("last_update"),
                 "device_class": "timestamp",
                 "icon": "mdi:clock-outline",
                 "device": device,
@@ -112,7 +130,7 @@ class HomeAssistantDiscovery:
             self.publisher.publish_raw(self._config_topic(sensor), "", retain=True)
 
     def publish_states_from_data(self, data: Dict[str, Any]) -> None:
-        """Extract scalar values from a Suez payload and publish them."""
+        """Extract the latest values from a Suez payload; ``flush_states`` publishes them."""
         measures = (
             data.get("data", {}).get("content", {}).get("measures", [])
             if isinstance(data, dict)
@@ -136,8 +154,7 @@ class HomeAssistantDiscovery:
 
         volume_m3 = latest.get("volume")
         if isinstance(volume_m3, (int, float)):
-            liters = round(float(volume_m3) * 1000, 1)
-            self.publisher.publish_raw(self.state_topic("daily_volume"), str(liters), retain=True)
+            self._state["daily_volume"] = round(float(volume_m3) * 1000, 1)
 
         date_str = latest.get("date")
         if isinstance(date_str, str) and date_str:
@@ -147,19 +164,17 @@ class HomeAssistantDiscovery:
                 iso = f"{iso}T00:00:00"
             if not re.search(r"(Z|[+-]\d{2}:?\d{2})$", iso):
                 iso = f"{iso}+00:00"
-            self.publisher.publish_raw(self.state_topic("last_update"), iso, retain=True)
+            self._state["last_update"] = iso
 
         # Some integrations expose a cumulative meter index in the measure itself.
         for key in ("index", "indexValue", "meter", "total"):
             index = latest.get(key)
             if isinstance(index, (int, float)):
-                self.publisher.publish_raw(
-                    self.state_topic("total_volume"), str(float(index)), retain=True
-                )
+                self._state["total_volume"] = float(index)
                 break
 
     def publish_meter_reading(self, value: Optional[float]) -> None:
-        """Publish a cumulative meter reading (m³) coming from a dedicated API call."""
+        """Record a cumulative meter reading (m³) from a dedicated API call; ``flush_states`` publishes it."""
         if value is None:
             return
         try:
@@ -167,4 +182,15 @@ class HomeAssistantDiscovery:
         except (TypeError, ValueError):
             logger.debug(f"Ignoring non-numeric meter reading: {value!r}")
             return
-        self.publisher.publish_raw(self.state_topic("total_volume"), str(as_float), retain=True)
+        self._state["total_volume"] = as_float
+
+    def flush_states(self) -> None:
+        """Publish the collected values: one JSON object, or one scalar topic per sensor."""
+        if not self._state:
+            return
+        if self.json_state_topic:
+            payload = {self.JSON_KEYS[k]: v for k, v in self._state.items()}
+            self.publisher.publish_raw(self.json_state_topic, json.dumps(payload), retain=True)
+            return
+        for sensor, value in self._state.items():
+            self.publisher.publish_raw(self.state_topic(sensor), str(value), retain=True)
